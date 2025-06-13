@@ -1,11 +1,10 @@
-import { Message, streamText, type ToolResultUnion } from "ai";
 import { stdout } from 'process';
 import { command, option, string } from 'cmd-ts';
 import { openrouter, tools } from '../core';
-import { StreamingMarkdown } from './ui';
-import { render } from 'ink';
-import React from 'react';
 import { Agent, AgentObserver } from '../core/agent';
+import { getConfig } from 'src/core/config';
+import { createOpenRouter, OpenRouterProvider } from '@openrouter/ai-sdk-provider';
+import { Provider } from 'ai';
 
 class ConsoleAgentObserver implements AgentObserver {
 
@@ -61,7 +60,7 @@ export const promptCommand = command({
       long: 'model',
       short: 'm',
       description: 'The model to use (default: anthropic/claude-sonnet-4)',
-      defaultValue: () => 'anthropic/claude-sonnet-4',
+      defaultValue: () => '',
     }),
     temperature: option({
       type: string,
@@ -73,14 +72,29 @@ export const promptCommand = command({
   },
   handler: async ({ prompt, model, temperature }: { prompt: string, model: string, temperature: string }) => {
 
+    const config = getConfig();
+
+    let provider: OpenRouterProvider | null = null;  
+    if (config.provider === 'openrouter') {
+      provider = createOpenRouter({
+        apiKey: config.apiKey,
+      });
+    }
+
+    if (!provider) {
+      throw new Error('Provider not found');
+    }
+
     const agent = new Agent(
       {
-        model: openrouter.chat(model),
+        model: provider.chat(model || config.model),
         system: "You are a philosopher. You are smart. Critical thinking is your strength. You are given a question and you need to answer it.",
         tools: tools,
         temperature: parseFloat(temperature)
       }
     );
+
+    await agent.initialize();
 
     const observer = new ConsoleAgentObserver();
 

@@ -1,4 +1,5 @@
 import { CoreAssistantMessage, LanguageModel, Message, StepResult, streamText, ToolSet } from "ai";
+import { Memory } from "./memory";
 
 export interface AgentConfig {
   model: LanguageModel;
@@ -20,18 +21,28 @@ export interface AgentObserver {
 
 export class Agent {
   private readonly messages: Message[] = [];
+  private readonly memory: Memory;
 
   constructor(
     private readonly config: AgentConfig    
   ) {
+    this.memory = new Memory();
+  }
+
+  async initialize() {
+    await this.memory.initDatabase();
+    await this.loadHistory();
   }
 
   async run(prompt: string, observer: AgentObserver) {
-    this.messages.push({
+    const userMessage: Message = {
       id: crypto.randomUUID().slice(0, 8),
       role: 'user',
       content: prompt,
-    });
+    };
+    
+    this.messages.push(userMessage);
+    await this.memory.saveMessage(userMessage);
 
     while (true) {
       const result = await streamText({
@@ -46,10 +57,11 @@ export class Agent {
         stopSequences: [],
         maxSteps: 1,
         tools: this.config.tools,
-        onStepFinish: (step: StepResult<ToolSet>) => {
-          step.response.messages.forEach((message: any) => {
+        onStepFinish: async (step: StepResult<ToolSet>) => {
+          for (const message of step.response.messages) {
             this.messages.push(message as Message);
-          });
+            await this.memory.saveMessage(message as Message);
+          }
           observer.onFinishStep(step);
         },
         onError: (error: any) => {
@@ -69,5 +81,19 @@ export class Agent {
         break;
       }
     }
+  }
+
+  async loadHistory(): Promise<void> {
+    const messages = await this.memory.getAllMessages();
+    this.messages.push(...messages);
+  }
+
+  async clearHistory(): Promise<void> {
+    this.messages.length = 0;
+    await this.memory.clearMessages();
+  }
+
+  close() {
+    this.memory.close();
   }
 }
