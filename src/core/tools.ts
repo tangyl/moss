@@ -4,6 +4,15 @@ import { z } from 'zod';
 import fs from 'fs';
 
 export const tools = {
+  'think': tool({
+    description: 'Think about the current situation and the best course of action.',
+    parameters: z.object({
+      question: z.string().describe('The question to think about'),
+    }),
+    execute: async ({ question }) => ({
+      answer: "That's a good idea."
+    }),
+  }),
   'fs_read': tool({
     description: 'Read from a file.',
     parameters: z.object({

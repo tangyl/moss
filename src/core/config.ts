@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as yaml from 'js-yaml';
+import { ConfigLock } from './config-lock';
 
 export interface MossConfig {
   configDir: string;
@@ -10,6 +11,9 @@ export interface MossConfig {
   model: string;
   sysPrompt: string;
 }
+
+// Global lock instance
+let globalConfigLock: ConfigLock | null = null;
 
 export function findMossConfigDir(): string {
   // First search upwards from current directory
@@ -62,4 +66,55 @@ export function getConfig(): MossConfig {
   }
 
   return config as MossConfig;
+}
+
+/**
+ * Get configuration with automatic locking
+ * @param timeout Lock timeout in milliseconds
+ * @returns Promise<MossConfig>
+ */
+export async function getConfigWithLock(timeout: number = 5000): Promise<MossConfig> {
+  const config = getConfig();
+  
+  // Create lock instance
+  if (!globalConfigLock) {
+    globalConfigLock = new ConfigLock(config.configDir);
+  }
+  
+  // Try to acquire lock
+  await globalConfigLock.acquireLock(timeout);
+  
+  return config;
+}
+
+/**
+ * Release configuration lock
+ */
+export async function releaseConfigLock(): Promise<void> {
+  if (globalConfigLock) {
+    await globalConfigLock.releaseLock();
+    globalConfigLock = null;
+  }
+}
+
+/**
+ * Get current lock information
+ */
+export async function getLockInfo(): Promise<any | null> {
+  const config = getConfig();
+  const lock = new ConfigLock(config.configDir);
+  return await lock.getLockInfo();
+}
+
+/**
+ * Force clear lock file (for debugging or emergency situations)
+ */
+export async function forceClearLock(): Promise<void> {
+  const config = getConfig();
+  const lock = new ConfigLock(config.configDir);
+  try {
+    await lock.releaseLock();
+  } catch (error) {
+    // Silently handle errors
+  }
 }

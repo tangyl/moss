@@ -2,7 +2,7 @@ import { stdout } from 'process';
 import { command, option, string } from 'cmd-ts';
 import { openrouter, tools } from '../core';
 import { Agent, AgentObserver } from '../core/agent';
-import { getConfig } from 'src/core/config';
+import { getConfigWithLock, releaseConfigLock } from 'src/core/config';
 import { createOpenRouter, OpenRouterProvider } from '@openrouter/ai-sdk-provider';
 import { Provider } from 'ai';
 
@@ -25,6 +25,9 @@ class ConsoleAgentObserver implements AgentObserver {
         stdout.write(`🔧 ${toolResult.toolName} `);
 
         switch (toolResult.toolName) {
+          case 'think':
+            stdout.write(`${toolResult.args.question} \n`);
+            break;
           case 'os_shell_exec':            
             stdout.write(`${toolResult.args.command} \n`);
             break;
@@ -69,36 +72,60 @@ export const promptCommand = command({
       description: 'Temperature for generation (default: 0.5)',
       defaultValue: () => '0.5',
     }),
+    lockTimeout: option({
+      type: string,
+      long: 'lock-timeout',
+      description: 'Config lock timeout in milliseconds (default: 5000)',
+      defaultValue: () => '5000',
+    }),
   },
-  handler: async ({ prompt, model, temperature }: { prompt: string, model: string, temperature: string }) => {
+  handler: async ({ prompt, model, temperature, lockTimeout }: { 
+    prompt: string, 
+    model: string, 
+    temperature: string,
+    lockTimeout: string 
+  }) => {
 
-    const config = getConfig();
-
-    let provider: OpenRouterProvider | null = null;  
-    if (config.provider === 'openrouter') {
-      provider = createOpenRouter({
-        apiKey: config.apiKey,
-      });
+    let config;
+    try {
+      // Get configuration with automatic locking
+      config = await getConfigWithLock(parseInt(lockTimeout));
+    } catch (error: any) {
+      // Show concise message when locked and exit
+      console.error('Configuration is in use, please try again later');
+      process.exit(1);
     }
 
-    if (!provider) {
-      throw new Error('Provider not found');
-    }
-
-    const agent = new Agent(
-      {
-        model: provider.chat(model || config.model),
-        system: "You are a philosopher. You are smart. Critical thinking is your strength. You are given a question and you need to answer it.",
-        tools: tools,
-        temperature: parseFloat(temperature)
+    try {
+      let provider: OpenRouterProvider | null = null;  
+      if (config.provider === 'openrouter') {
+        provider = createOpenRouter({
+          apiKey: config.apiKey,
+        });
       }
-    );
 
-    await agent.initialize();
+      if (!provider) {
+        throw new Error('Provider not found');
+      }
 
-    const observer = new ConsoleAgentObserver();
+      const agent = new Agent(
+        {
+          model: provider.chat(model || config.model),
+          system: "You are a philosopher. You are smart. Critical thinking is your strength. You are given a question and you need to answer it.",
+          tools: tools,
+          temperature: parseFloat(temperature)
+        }
+      );
 
-    await agent.run(prompt, observer);
+      await agent.initialize();
+
+      const observer = new ConsoleAgentObserver();
+
+      await agent.run(prompt, observer);
+    } finally {
+      // Ensure lock is released
+      await releaseConfigLock();
+    }
   },
 });
 
