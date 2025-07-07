@@ -1,10 +1,12 @@
 import { stdout } from 'process';
 import { command, option, string } from 'cmd-ts';
-import { openrouter, tools } from '../core';
+import { openrouter, getTools } from '../core';
 import { Agent, AgentObserver } from '../core/agent';
+import { getTools } from '../core/tools';
 import { getConfigWithLock, releaseConfigLock } from 'src/core/config';
 import { createOpenRouter, OpenRouterProvider } from '@openrouter/ai-sdk-provider';
 import { Provider } from 'ai';
+import { MCPManager } from '../core/mcp';
 
 class ConsoleAgentObserver implements AgentObserver {
 
@@ -64,7 +66,7 @@ export const promptCommand = command({
       short: 'm',
       description: 'The model to use (default: anthropic/claude-sonnet-4)',
       defaultValue: () => '',
-    }),
+    }),    
     temperature: option({
       type: string,
       long: 'temperature',
@@ -96,6 +98,8 @@ export const promptCommand = command({
       process.exit(1);
     }
 
+    let mcpManager: MCPManager | null = null;
+
     try {
       let provider: OpenRouterProvider | null = null;  
       if (config.provider === 'openrouter') {
@@ -108,11 +112,14 @@ export const promptCommand = command({
         throw new Error('Provider not found');
       }
 
+      mcpManager = new MCPManager();
+      await mcpManager.initialize(config.configDir + '/mcp.json');
+
       const agent = new Agent(
         {
           model: provider.chat(model || config.model),
           system: "You are a philosopher. You are smart. Critical thinking is your strength. You are given a question and you need to answer it.",
-          tools: tools,
+          tools: getTools(),
           temperature: parseFloat(temperature)
         }
       );
@@ -123,6 +130,9 @@ export const promptCommand = command({
 
       await agent.run(prompt, observer);
     } finally {
+      if (mcpManager) {
+        await mcpManager.close();
+      }
       // Ensure lock is released
       await releaseConfigLock();
     }
