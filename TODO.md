@@ -11,7 +11,7 @@ Checkpoints:
 - [ ] save/restore filesystem changes.
 
 Memory:
-- [ ] persistent memory
+- [X] persistent memory
 - [ ] progressive memory summarization
 - [ ] long term memory recall
 
