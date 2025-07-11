@@ -1,10 +1,10 @@
-import { CoreAssistantMessage, LanguageModel, Message, StepResult, streamText, ToolSet } from "ai";
+import { LanguageModel, Message, StepResult, streamText, ToolSet } from "ai";
 import { Memory } from "./memory";
+import { getTools } from "./tools";
 
 export interface AgentConfig {
   model: LanguageModel;
   system: string;
-  tools: ToolSet;
   temperature: number;
 }
 
@@ -17,6 +17,10 @@ export interface AgentObserver {
   onFinish(reason: string): void;
 
   onFinishStep(step: any): void;
+
+  beforeExecute(toolName: string, args: any): void;
+
+  afterExecute(toolName: string, args: any, result: any): void;
 }
 
 export class Agent {
@@ -57,7 +61,10 @@ export class Agent {
           presencePenalty: 0,
           stopSequences: [],
           maxSteps: 1,
-          tools: this.config.tools,
+          tools: getTools({
+            beforeExecute: observer.beforeExecute, 
+            afterExecute: observer.afterExecute
+          }),
           onStepFinish: async (step: StepResult<ToolSet>) => {
             for (const message of step.response.messages) {
               this.messages.push(message as Message);
